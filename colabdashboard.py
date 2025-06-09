@@ -2,15 +2,20 @@ import gradio as gr
 import joblib
 import numpy as np
 import re
+from complaint_categories import get_top_complaints
 
 # Load model and preprocessing objects
-model = joblib.load('best_ensemble_model.joblib')
-vectorizer = joblib.load('vectorizer.joblib')
 try:
-    svd = joblib.load('svd.joblib')
-except:
-    svd = None
-label_encoder = joblib.load('label_encoder.joblib')
+    model = joblib.load('best_ensemble_model.joblib')
+    vectorizer = joblib.load('vectorizer.joblib')
+    try:
+        svd = joblib.load('svd.joblib')
+    except:
+        svd = None
+    label_encoder = joblib.load('label_encoder.joblib')
+except Exception as e:
+    print(f"Error loading model files: {str(e)}")
+    raise
 
 # Text cleaning (same as in Untitled-2.py)
 def clean_text(text):
@@ -79,31 +84,66 @@ def extract_meta_features(texts):
         features.append([review_length, avg_word_length, punct_count, upper_count])
     return np.array(features)
 
-def predict_rating(review):
+def predict_rating_and_complaints(text):
+    """
+    Predict rating and analyze complaints for a single review.
+    Returns both the predicted rating and the top complaints.
+    """
     try:
-        clean = clean_text(review)
-        X = vectorizer.transform([clean])
+        # Clean and transform the input text
+        clean_input = clean_text(text)
+        X = vectorizer.transform([clean_input])
         if svd is not None:
             X = svd.transform(X)
         else:
             X = X.toarray()
-        lexicon_features = extract_lexicon_features([clean])
-        meta_features = extract_meta_features([clean])
+        
+        # Add lexicon and meta features
+        lexicon_features = extract_lexicon_features([clean_input])
+        meta_features = extract_meta_features([clean_input])
         X_full = np.hstack([X, lexicon_features, meta_features])
+        
+        # Make prediction
         pred = model.predict(X_full)
-        pred_label = label_encoder.inverse_transform(pred)[0]
-        return f"Predicted Rating: {pred_label}"
+        predicted_rating = label_encoder.inverse_transform(pred)[0]
+        
+        # Get complaints
+        top_complaints = get_top_complaints([clean_input], top_n=3)
+        
+        # Format complaints for display
+        complaints_text = "No significant complaints detected."
+        if top_complaints:
+            complaints_text = "Top Complaints:\n"
+            for category, count, description in top_complaints:
+                complaints_text += f"- {category}: {description}\n"
+        
+        return predicted_rating, complaints_text
     except Exception as e:
-        import traceback
-        return f"Error: {str(e)}\n\n{traceback.format_exc()}"
+        print(f"Error in prediction: {str(e)}")
+        return 0, f"Error occurred: {str(e)}"
 
-iface = gr.Interface(
-    fn=predict_rating,
-    inputs=gr.Textbox(lines=5, label="Enter your review"),
-    outputs=gr.Textbox(label="Prediction"),
-    title="Review Rating Predictor",
-    description="Enter a product review and get a predicted rating (1-5 stars)."
-)
+# Make the function available for import
+__all__ = ['predict_rating_and_complaints']
 
+# Only create the interface if this file is run directly
 if __name__ == "__main__":
-    iface.launch(share=True)
+    iface = gr.Interface(
+        fn=predict_rating_and_complaints,
+        inputs=gr.Textbox(
+            label="Enter your review text",
+            placeholder="Type your review here...",
+            lines=5
+        ),
+        outputs=[
+            gr.Number(label="Predicted Rating (1-5)"),
+            gr.Textbox(label="Complaint Analysis", lines=5)
+        ],
+        title="Review Analysis Dashboard",
+        description="Enter a product review to predict its rating and analyze potential complaints.",
+        examples=[
+            ["The product arrived quickly and fits perfectly. Very satisfied with the quality!"],
+            ["Poor quality material, arrived damaged and doesn't fit well. Would not recommend."],
+            ["Good product but shipping took longer than expected. The material quality is decent."]
+        ]
+    )
+    iface.launch()

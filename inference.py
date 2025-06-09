@@ -1,6 +1,7 @@
 import joblib
 import numpy as np
 import re
+from complaint_categories import get_top_complaints
 
 # Load model and preprocessing objects
 model = joblib.load('best_ensemble_model.joblib')
@@ -77,9 +78,15 @@ def extract_meta_features(texts):
         features.append([review_length, avg_word_length, punct_count, upper_count])
     return np.array(features)
 
-def predict_rating(comments):
-    # comments: list of strings
+def predict_rating_and_complaints(comments):
+    """
+    Predict ratings and analyze complaints for a list of comments.
+    Returns a tuple of (predictions, top_complaints)
+    """
+    # Clean comments
     clean_comments = [clean_text(c) for c in comments]
+    
+    # Get predictions
     X = vectorizer.transform(clean_comments)
     if svd is not None:
         X = svd.transform(X)
@@ -92,8 +99,12 @@ def predict_rating(comments):
         lexicon_features if lexicon_features.ndim == 2 else lexicon_features.reshape(-1, 4),
         meta_features if meta_features.ndim == 2 else meta_features.reshape(-1, 4)
     ])
-    pred = model.predict(X_full)
-    return label_encoder.inverse_transform(pred)
+    predictions = label_encoder.inverse_transform(model.predict(X_full))
+    
+    # Get top complaints
+    top_complaints = get_top_complaints(clean_comments, top_n=3)
+    
+    return predictions, top_complaints
 
 if __name__ == "__main__":
     comments = [
@@ -103,6 +114,12 @@ if __name__ == "__main__":
         "Fast shipping and good packaging.",
         "Worst purchase ever."
     ]
-    predictions = predict_rating(comments)
+    predictions, top_complaints = predict_rating_and_complaints(comments)
+    
+    print("\nPredictions:")
     for comment, rating in zip(comments, predictions):
         print(f"Comment: {comment}\nPredicted Rating: {rating}\n")
+    
+    print("\nTop Complaints:")
+    for category, count, description in top_complaints:
+        print(f"{category}: {count} mentions - {description}")
