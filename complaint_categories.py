@@ -108,4 +108,26 @@ def get_top_complaints(texts, top_n=3):
         reverse=True
     )
     
-    return sorted_complaints[:top_n] 
+    return sorted_complaints[:top_n]
+
+def get_total_complaint_counts(texts):
+    """
+    Get the total count of each complaint category across all texts.
+    Returns a dictionary with category names as keys and total counts as values.
+    """
+    total_counts = {category: 0 for category in COMPLAINT_CATEGORIES.keys()}
+    
+    for text in texts:
+        complaints = extract_complaints(text)
+        for category in complaints:
+            total_counts[category] += 1
+    
+    # Convert to list of tuples (category, count, description) sorted by count
+    sorted_counts = sorted(
+        [(cat, count, COMPLAINT_CATEGORIES[cat]['description']) 
+         for cat, count in total_counts.items() if count > 0],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    
+    return sorted_counts 
