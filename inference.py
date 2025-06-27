@@ -1,7 +1,7 @@
 import joblib
 import numpy as np
 import re
-from complaint_categories import get_top_complaints
+from complaint_categories_zeroshot import extract_complaints_zeroshot
 
 # Load model and preprocessing objects
 model = joblib.load('best_ensemble_model.joblib')
@@ -78,6 +78,73 @@ def extract_meta_features(texts):
         features.append([review_length, avg_word_length, punct_count, upper_count])
     return np.array(features)
 
+def count_complaints_by_category(texts, threshold=0.5):
+    """
+    Count complaints by category across multiple texts using zero-shot classification.
+    Returns a dictionary with category names as keys and counts as values.
+    
+    Args:
+        texts: List of review texts
+        threshold: Confidence threshold for zero-shot (default 0.5)
+    
+    Returns:
+        dict: {category: count} for all categories
+    """
+    complaint_counts = {
+        'material_quality': 0,
+        'sound_quality': 0,
+        'battery_life': 0,
+        'comfort_fit': 0,
+        'connectivity': 0,
+        'shipping_delivery': 0,
+        'price_value': 0,
+        'customer_service': 0
+    }
+    
+    for text in texts:
+        complaints = extract_complaints_zeroshot(text, threshold=threshold)
+        for category in complaints:
+            complaint_counts[category] += 1
+    
+    return complaint_counts
+
+def get_top_complaints_zeroshot(texts, top_n=3, threshold=0.5):
+    """
+    Get the most common complaints across multiple texts using zero-shot classification.
+    Returns a list of tuples (category, count, description).
+    
+    Args:
+        texts: List of review texts
+        top_n: Number of top complaints to return
+        threshold: Confidence threshold for zero-shot
+    
+    Returns:
+        list: List of tuples (category, count, description)
+    """
+    complaint_counts = count_complaints_by_category(texts, threshold=threshold)
+    
+    # Create descriptions for each category
+    category_descriptions = {
+        'material_quality': 'Issues related to the physical quality and durability of materials',
+        'sound_quality': 'Issues related to audio performance and sound characteristics',
+        'battery_life': 'Issues related to battery performance and charging',
+        'comfort_fit': 'Issues related to physical comfort and fit',
+        'connectivity': 'Issues related to wireless connectivity and pairing',
+        'shipping_delivery': 'Issues related to shipping, delivery, and packaging',
+        'price_value': 'Issues related to pricing and value for money',
+        'customer_service': 'Issues related to customer service and support'
+    }
+    
+    # Sort by count and get top N
+    sorted_complaints = sorted(
+        [(cat, count, category_descriptions[cat]) 
+         for cat, count in complaint_counts.items() if count > 0],
+        key=lambda x: x[1],
+        reverse=True
+    )
+    
+    return sorted_complaints[:top_n]
+
 def predict_rating_and_complaints(comments):
     """
     Predict ratings and analyze complaints for a list of comments.
@@ -101,8 +168,8 @@ def predict_rating_and_complaints(comments):
     ])
     predictions = label_encoder.inverse_transform(model.predict(X_full))
     
-    # Get top complaints
-    top_complaints = get_top_complaints(clean_comments, top_n=3)
+    # Get top complaints using zero-shot
+    top_complaints = get_top_complaints_zeroshot(clean_comments, top_n=3)
     
     return predictions, top_complaints
 
@@ -123,3 +190,10 @@ if __name__ == "__main__":
     print("\nTop Complaints:")
     for category, count, description in top_complaints:
         print(f"{category}: {count} mentions - {description}")
+    
+    # Test the complaint counting function
+    print("\nComplaint Counts by Category:")
+    complaint_counts = count_complaints_by_category(comments)
+    for category, count in complaint_counts.items():
+        if count > 0:
+            print(f"{category}: {count}")
